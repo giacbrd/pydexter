@@ -1,1 +1,1 @@
-A Python client for the `Dextex <http://dexter.isti.cnr.it/>`_ REST API
+A Python client for the `Dexter <http://dexter.isti.cnr.it/>`_ REST API
