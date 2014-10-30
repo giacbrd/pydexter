@@ -1,5 +1,9 @@
 **pydexter** - a Python client for the `Dexter <http://dexter.isti.cnr.it/>`_ REST API (`documentation <http://dexterdemo.isti.cnr.it:8080/dexter-webapp/dev/#!/rest>`_)
 
+Installation::
+
+    python setup.py install
+
 Usage example:
 
 >>> import pydexter
