@@ -35,11 +35,11 @@ def structure_annotations(annotations):
     """Processes the response of the API call annotate.
     Returns a list with a partitioning of the text,
     in which the annotations are represented by tuples (``mention'', ``entity name'')"""
-    text = annotations["text"]
+    text = annotations["document"]["fields"]["body"]["value"]
     spots = annotations["spots"]
     result = []
     prev_end = 0
-    #FIXME rewrite for avoiding sorting?
+    #FIXME avoid sorting?
     spots = sorted(spots, key=itemgetter("start"))
     for spot in spots:
         start = spot["start"]
@@ -64,32 +64,80 @@ class DexterClient:
 
     def get_id(self, entity_title):
         """Returns the ID of an entity"""
-        return self.__request("get-id", {"title":entity_title})["id"]
+        return self.__request("get-id", {"title": entity_title})["id"]
 
-    def annotate(self, text, wikiname=False):
-        return self.__request("annotate", {"text":text,"wn":wikiname}, is_post=True)
+    def annotate(self, text, wikiname=False, min_conf=0.5, max_spots=50):
+        """Annotate a document with Wikipedia entities"""
+        return self.__request("annotate", {"text": text, "wn": wikiname, "min-conf": min_conf, "n": max_spots}, is_post=False)
 
-    def nice_annotate(self, text):
+    def nice_annotate(self, text, min_conf=0.5):
         """Returns a list with a partitioning of the text,
         in which the annotations are represented by tuples (``mention'', ``entity name'')"""
-        return structure_annotations(self.annotate(text, wikiname=True))
+        return structure_annotations(self.annotate(text, wikiname=True, min_conf=min_conf))
 
     def spot(self, text, wikiname=False):
         """Detects all the mentions that could refer to an entity in the text"""
-        return self.__request("spot", {"text":text,"wn":wikiname}, is_post=True)["spots"]
+        return self.__request("spot", {"text": text, "wn": wikiname}, is_post=True)["spots"]
 
     def get_spots(self, entity, wikiname=False):
+        """Provides all the spots that could refer to the given entity"""
+        return self.__simple_request("get-spots", entity, wikiname)["spots"]
+
+    def get_desc(self, entity, title_only=False):
+        """Provides the description of an entity"""
         entity_id = self.__resolve_id(entity)
-        return self.__request("get-spots", {"id":entity_id,"wn":wikiname})["spots"]
+        return self.__request("get-desc", {"id": entity_id, "title-only": title_only})
+
+    def get_candidates(self, query, max_candidates=10):
+        """Given a query, returns a list of candidates entities represented by the query"""
+        return self.__request("get-candidates", {"query": query, "n": max_candidates})
+
+    def relatedness(self, entity1, entity2, rel_measure="milnewitten", wikiname=False):
+        """Return the semantic relatedness between two entities"""
+        entity_id1 = self.__resolve_id(entity1)
+        entity_id2 = self.__resolve_id(entity2)
+        return self.__request("relatedness", {"e1": entity_id1, "e2": entity_id2, "rel": rel_measure, "wn": wikiname})
+
+    #TODO def spot_relatedness
+
+    def get_target_entities(self, entity, wikiname=False):
+        """Given an entity, returns the entities linked by given entity"""
+        return self.__simple_request("get-target-entities", entity, wikiname)["outcomingEntities"]
+
+    def get_source_entities(self, entity, wikiname=False):
+        """Given an entity, returns the entities that link to the given entity"""
+        return self.__simple_request("get-source-entities", entity, wikiname)["incomingEntities"]
+
+    def get_entity_categories(self, entity, wikiname=False):
+        """Given an entity, returns its categories"""
+        return self.__simple_request("get-entity-categories", entity, wikiname)["parentCategories"]
+
+    def get_belonging_entities(self, category, wikiname=False):
+        """Given a category, returns the entities that belong to the category"""
+        return self.__simple_request("get-belonging-entities", category, wikiname)["outcomingEntities"]
+
+    def get_parent_categories(self, category, wikiname=False):
+        """Given a category, returns its parent categories"""
+        return self.__simple_request("get-parent-categories", category, wikiname)["parentCategories"]
+
+    def get_child_categories(self, category, wikiname=False):
+        """Given a category, returns its child categories"""
+        return self.__simple_request("get-child-categories", category, wikiname)["childCategories"]
 
     def __resolve_id(self, entity):
-        """Returns the id of an entity (if it not already an id)"""
+        """Returns the id of an entity (if it not already a entity/category id)"""
         if isinstance(entity, (int, long)):
             return entity
         else:
             return self.get_id(entity)
 
+    def __simple_request(self, command, arg, wikiname):
+        """Shortcut for requests with the only entity/category id as argument"""
+        arg_id = self.__resolve_id(arg)
+        return self.__request(command, {"id": arg_id, "wn": wikiname})
+
     def __request(self, path, params, is_post=False):
+        """Core method which executes the request http connection"""
         params.update(self.default_params)
         result = None
         reqUrl = self.url + path
@@ -100,7 +148,8 @@ class DexterClient:
         if result.status_code != requests.codes.ok:
             raise HTTPError("HTTP error for " + reqUrl + " (status code " + str(result.status_code) + "):\n\n" + result.text)
         result = result.json()
-        if "error" in result and len(result)==1:
+        if "error" in result and len(result) == 1:
+            # This is probably never reached
             raise Exception("Dexter error for " + reqUrl + ": " + result["error"])
         return result
 
@@ -109,7 +158,4 @@ if __name__ == "__main__":
     dxtr = DexterClient(sys.argv[1])
     import pprint
     pp = pprint.PrettyPrinter()
-    # pp.pprint(dxtr.nice_annotate("Dexter is an American television drama series which debuted on Showtime on October 1, 2006. "
-    #                     "The series centers on Dexter Morgan (Michael C. Hall), "
-    #                     "a blood spatter pattern analyst for the fictional Miami Metro Police Department"))
-    pp.pprint(dxtr.get_spots("Cesar_Millan", wikiname=True))
+    pp.pprint(dxtr.nice_annotate("Dexter is an American television drama.", min_conf=0.8))
